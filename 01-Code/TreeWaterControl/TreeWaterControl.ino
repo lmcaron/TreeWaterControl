@@ -3,26 +3,21 @@
 
 //sorties pompe
 const int pompe[4] = {10,11,12,13};
-const int voyantArret = 2;
+
 //Variable d'état
 int niveau = 0;
-int distanceVide = 10;
+int distanceVide = 11;
 int distance = 0;
 bool etatPompe = LOW;
 
 // Timers auxiliar variables
 long now = millis();
+long lastAction[3] = {0,0,0};
+long actionInterval[3] = {500,3000,15000};
 long lastMeasure = 0;
-long dernierArrosage[4] = {0,0,0,0};
-long lastPublish[4] = {0,0,0,0};
-long publishInterval = 5000;
 
 //variables de vérification
-int nbArrosageCycle = 0;
-int nbArrosageMax = 4;
-int tArrosage = 7000;
 bool alarme = LOW;
-volatile bool arret = 0;
 int incomingByte = 0;
 
 //definition des pins et variables pour sensor de distance 
@@ -53,16 +48,18 @@ int detection()
   return distance;
 }
 
-//fonction d'arrosage de la plante 
-void arrosage(int indexPompe)
+//fonction depart d'arrosage de la plante 
+void departArrosage(int indexPompe)
 {
   etatPompe = HIGH;
-  serialOut();
   digitalWrite(pompe[indexPompe], LOW);
-  delay(tArrosage);
-  digitalWrite(pompe[indexPompe], HIGH);
+}
+
+//fonction arret d'arrosage de la plante 
+void arretArrosage(int indexPompe)
+{
   etatPompe = LOW;
-  serialOut();
+  digitalWrite(pompe[indexPompe], HIGH);
 }
 
 //fonction d'envoi de toutes les données actuelles sur le port série
@@ -89,9 +86,18 @@ void serialOut()
   Serial.println();
 }
 
-// The setup function sets your ESP GPIOs to Outputs, starts the serial communication at a baud rate of 115200
-// Sets your mqtt broker and sets the callback function
-// The callback function is what receives messages and actually controls the LEDs
+//fonction qui chronomètre le temps pour exécuter des actions
+bool timeReached(int nTimer)
+{
+  if(now - lastAction[nTimer] > actionInterval[nTimer]){
+    lastAction[nTimer] = now;
+    return HIGH;
+    }
+  else{
+    return LOW;
+  }
+}
+
 void setup() 
 {
   pinMode(trigPin, OUTPUT);
@@ -100,7 +106,7 @@ void setup()
     pinMode(pompe[j], OUTPUT);
     digitalWrite(pompe[j], HIGH);    
   }
-  Serial.begin(19200);
+  Serial.begin(57600);
 }
 
 void loop() 
@@ -118,21 +124,33 @@ void loop()
     lastMeasure = 0;
   }
   // Read water level every x seconds
-  if (now - lastMeasure > publishInterval) {
-    lastMeasure = now;
+  if (timeReached(0)) {
+    //lecture de niveau
     niveau = distanceVide - detection();
-    if (niveau <= 1 && alarme == LOW){
-      nbArrosageCycle = 0;
-      while(niveau < 3 && nbArrosageCycle < nbArrosageMax){
-        arrosage(1);
-        nbArrosageCycle++;
-        delay(2000);
-        niveau = distanceVide - detection();
-      }
-      if(nbArrosageCycle >= nbArrosageMax){
-        alarme = HIGH;
-      }
+    
+    //conditions d'activation/arret de pompe
+    if (niveau <= 2 && alarme == LOW && etatPompe == LOW){
+      departArrosage(1);
+      lastAction[2] = now;
     }
-    serialOut();
+    if(niveau >= 3){
+      arretArrosage(1); 
+    }
+    //sécurité si la pompe arrose trop longtemps
+    if(etatPompe == HIGH && timeReached(2)){
+      arretArrosage(1);
+      alarme = HIGH;
+    } 
+    if(niveau >=5){
+      arretArrosage(1);
+      alarme = HIGH;
+    }
+    if(alarme == HIGH){
+      arretArrosage(1);
+    }
+    //envoi de données d'état actuel
+    if(timeReached(1)){
+      serialOut();
+    }
   }
 } 
