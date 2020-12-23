@@ -12,13 +12,14 @@ bool etatPompe = LOW;
 
 // Timers auxiliar variables
 long now = millis();
-long lastAction[3] = {0,0,0};
-long actionInterval[3] = {500,3000,15000};
+long lastAction[4] = {0,0,0,0};
+long actionInterval[4] = {500,3000,15000,20000};
 long lastMeasure = 0;
 
 //variables de vérification
 bool alarme = LOW;
 int incomingByte = 0;
+bool niveauCritique = LOW;
 
 //definition des pins et variables pour sensor de distance 
 // defines pins numbers
@@ -117,7 +118,7 @@ void loop()
     if(incomingByte == 48){alarme = LOW;}
     if(incomingByte == 49){alarme = HIGH;}
   }
-    
+   
   now = millis();
   //si fonction millis se réinitialise, les valeurs temps sont ramenées à 0.
   if(now - lastMeasure < 0){
@@ -128,19 +129,27 @@ void loop()
     //lecture de niveau
     niveau = distanceVide - detection();
     
+    //initialise le compteur de niveau critique (pour stabiliser lecture)
+    if(niveau <=2 && niveauCritique == LOW){
+      lastAction[3] = now;
+      niveauCritique = HIGH;
+    }
     //conditions d'activation/arret de pompe
-    if (niveau <= 2 && alarme == LOW && etatPompe == LOW){
+    if (niveau <= 2 && alarme == LOW && etatPompe == LOW && timeReached(3)){
       departArrosage(1);
       lastAction[2] = now;
     }
     if(niveau >= 3){
-      arretArrosage(1); 
+      arretArrosage(1);
+      niveauCritique = LOW; 
     }
-    //sécurité si la pompe arrose trop longtemps
+    //sécurités si la pompe arrose trop longtemps
     if(etatPompe == HIGH && timeReached(2)){
       arretArrosage(1);
       alarme = HIGH;
+      niveauCritique = LOW;
     } 
+    //Sécurité si le niveau est trop haut
     if(niveau >=5){
       arretArrosage(1);
       alarme = HIGH;
